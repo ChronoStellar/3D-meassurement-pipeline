@@ -29,12 +29,12 @@ RUN pip install --no-cache-dir -r requirements.txt
 # (This includes main.py, api.py, VIBE.py, etc.)
 COPY . .
 
-# 6. Make your data script executable and RUN it
-# This will download the SMPL/VIBE models into the container
+# 6. Create model directories and copy files directly
+# This avoids having the 'data' directory in the final image if not needed
 RUN mkdir -p /root/.torch/models/ \
  && mkdir -p /root/.torch/config/ \
- && mv data/vibe_data/yolov3.weights /root/.torch/models/yolov3.weights \
- && mv data/yolov3.cfg /root/.torch/config/yolov3.cfg
+ && cp /app/data/vibe_data/yolov3.weights /root/.torch/models/yolov3.weights \
+ && cp /app/data/yolov3.cfg /root/.torch/config/yolov3.cfg
 
 # 7. Set the command
-CMD ["python", 'handler.py']
+CMD ["python", "-u", "handler.py"]
