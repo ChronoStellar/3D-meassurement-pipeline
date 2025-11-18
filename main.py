@@ -60,25 +60,27 @@ def measure_json(model_path):
     # Return the JSON string for the API
     return json_str
 
-def pkl2ply(pkl_path):
+# <-- *** MODIFICATION 1 *** -->
+# Renamed from pkl2ply to results_to_ply
+# Now accepts the vibe_data dictionary and output_folder directly
+def results_to_ply(vibe_data: dict, output_folder: str):
     """
-    Converts a VIBE .pkl output file to a .ply mesh.
-    Saves the .ply in the same directory as the .pkl and returns the path.
+    Converts a VIBE results dictionary to a .ply mesh.
+    Saves the .ply in the specified output_folder and returns the path.
     """
-    print(f"\n--- 2. CONVERTING PKL TO PLY: {pkl_path} ---")
+    print(f"\n--- 2. CONVERTING VIBE data TO PLY ---")
     smpl_model_path = 'data/vibe_data'
     
-    # Save the .ply file in the *same folder* as the .pkl file
-    # This keeps results grouped by video
-    output_ply_path = os.path.join(os.path.dirname(pkl_path), "result.ply")
-    
-    os.makedirs(os.path.dirname(output_ply_path), exist_ok=True)
+    # Save the .ply file in the output folder
+    output_ply_path = os.path.join(output_folder, "result.ply")
+    os.makedirs(output_folder, exist_ok=True)
 
     try:
-        output = joblib.load(pkl_path)
+        # The data is already a dictionary, no joblib.load needed
+        output = vibe_data
         person_ids = list(output.keys())
         if not person_ids:
-            print(f"Error: No people found in pkl file: {pkl_path}")
+            print(f"Error: No people found in vibe_data dictionary")
             return None
             
         first_person_id = person_ids[0]
@@ -86,11 +88,11 @@ def pkl2ply(pkl_path):
         
         all_vertices = output[first_person_id]['verts']
     except Exception as e:
-        print(f"Error loading {pkl_path}: {e}. Is it a VIBE pkl file?")
+        print(f"Error reading vibe_data dictionary: {e}.")
         print("Attempting to load as list (legacy format)...")
         try:
-            output = joblib.load(pkl_path)
-            all_vertices = output[1]['verts'] # Try original structure
+            # Legacy format check (just in case, though vibe_data is dict)
+            all_vertices = vibe_data[1]['verts']
         except Exception as e2:
             print(f"Legacy load failed: {e2}")
             return None
@@ -111,18 +113,21 @@ def pkl2ply(pkl_path):
     return output_ply_path
 
 
+# <-- *** MODIFICATION 2 *** -->
+# Updated to capture the returned dictionary from run_vibe
 def process_video_endpoint(video_path):
     """
     Runs VIBE on a video and returns the path to the output .pkl file.
     """
     print(f"\n--- 1. STARTING VIBE PROCESSING for {video_path} ---")
-    # video_name = os.path.basename(video_path).split('.')[0] # No longer needed for path
     output_folder = 'output' 
     
-    # This is the new, simplified path you requested
-    result_path = os.path.join(output_folder, "vibe_output.pkl")
+    # This path is still used by VIBE to save the .pkl, but
+    # we won't use it for loading anymore.
+    pkl_save_path = os.path.join(output_folder, "vibe_output.pkl")
 
-    run_vibe(
+    # Run VIBE and get the results dictionary directly
+    vibe_data = run_vibe(
         vid_file=video_path,
         output_folder=output_folder, 
         run_smplify=True,
@@ -130,17 +135,22 @@ def process_video_endpoint(video_path):
         no_render=True
     )
     
-    if os.path.exists(result_path):
-        print(f"--- VIBE SUCCESS. Output saved to: {result_path} ---")
-        return {"status": "success", "result_file": result_path}
+    # Check if data was returned, not if a file exists
+    if vibe_data:
+        print(f"--- VIBE SUCCESS. Results returned in-memory. ---")
+        # Return the data dictionary and the folder path for saving the .ply
+        return {"status": "success", "data": vibe_data, "output_folder": output_folder}
     else:
-        print(f"--- VIBE FAILED. Expected file not found at: {result_path} ---")
-        return {"status": "error", "message": f"Processing failed. Expected file not found at: {result_path}"}
+        print(f"--- VIBE FAILED. No data returned from run_vibe. ---")
+        return {"status": "error", "message": f"Processing failed. VIBE returned no data."}
 
 # ===================================================================
 # =================== MAIN API FUNCTION =============================
 # ===================================================================
 
+# <-- *** MODIFICATION 3 *** -->
+# Updated to handle the new return value from process_video_endpoint
+# and call the new results_to_ply function
 def run_full_pipeline(input_video_path):
     """
     This is the main function your API will call.
@@ -148,20 +158,21 @@ def run_full_pipeline(input_video_path):
     a dictionary with the final measurements or an error.
     """
     
-    # --- STAGE 1: Process Video (Video -> PKL) ---
+    # --- STAGE 1: Process Video (Video -> VIBE data dict) ---
     vibe_results = process_video_endpoint(input_video_path)
     
     if vibe_results['status'] == 'error':
         return vibe_results # Pass the error dictionary up
     
-    # Use the path returned from the previous step
-    pkl_file = vibe_results['result_file']
+    # Get the data and save location from the results
+    vibe_data = vibe_results['data']
+    output_folder = vibe_results['output_folder']
     
-    # --- STAGE 2: Convert PKL to PLY (PKL -> PLY) ---
-    ply_file_path = pkl2ply(pkl_file)
+    # --- STAGE 2: Convert VIBE data to PLY (dict -> PLY) ---
+    ply_file_path = results_to_ply(vibe_data, output_folder)
     
     if ply_file_path is None:
-        return {"status": "error", "message": "Failed to convert PKL to PLY"}
+        return {"status": "error", "message": "Failed to convert VIBE data to PLY"}
     
     # --- STAGE 3: Measure Body (PLY -> JSON) ---
     try:
@@ -177,7 +188,7 @@ def run_full_pipeline(input_video_path):
 if __name__ == '__main__':
     
     # You can change this path to test different videos
-    video_to_process = "./sample_video.mp4" 
+    video_to_process = "sample_video.mp4" 
     
     if os.path.exists(video_to_process):
         

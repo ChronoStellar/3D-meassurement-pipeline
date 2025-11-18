@@ -2,7 +2,7 @@
 
 # 1. Start from an NVIDIA CUDA 12.1.0 image (to match your torch requirement)
 # This image is based on Ubuntu 22.04, which uses Python 3.10
-FROM nvidia/cuda:12.5.0-runtime-ubuntu22.04
+FROM nvidia/cuda:12.1.1-runtime-ubuntu22.04
 
 
 # 2. Set the working directory
@@ -29,15 +29,12 @@ RUN pip install --no-cache-dir -r requirements.txt
 # (This includes main.py, api.py, VIBE.py, etc.)
 COPY . .
 
-# 6. Make your data script executable and RUN it
-# This will download the SMPL/VIBE models into the container
-RUN chmod +x scripts/prepare_data.sh \
- && ./scripts/prepare_data.sh
+# 6. Create model directories and copy files directly
+# This avoids having the 'data' directory in the final image if not needed
+RUN mkdir -p /root/.torch/models/ \
+ && mkdir -p /root/.torch/config/ \
+ && cp /app/data/vibe_data/yolov3.weights /root/.torch/models/yolov3.weights \
+ && cp /app/data/yolov3.cfg /root/.torch/config/yolov3.cfg
 
-# 7. Expose the port Hugging Face expects
-EXPOSE 8080
-
-# 8. Set the command to run Gunicorn when the container starts
-#    --bind 0.0.0.0:8080: Binds to port 8080 (REQUIRED by Hugging Face)
-#
-CMD ["gunicorn", "--workers", "1", "--timeout", "120", "--bind", "0.0.0.0:8080", "api:app"]
+# 7. Set the command
+CMD ["python", "-u", "handler.py"]

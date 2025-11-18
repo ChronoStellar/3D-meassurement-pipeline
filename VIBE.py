@@ -132,7 +132,7 @@ def main(args):
         frames = dataset.frames
         has_keypoints = True if joints2d is not None else False
 
-        dataloader = DataLoader(dataset, batch_size=args.vibe_batch_size, num_workers=16)
+        dataloader = DataLoader(dataset, batch_size=args.vibe_batch_size, num_workers=1)
 
         with torch.no_grad():
 
@@ -254,8 +254,9 @@ def main(args):
     print(f'Total time spent: {total_time:.2f} seconds (including model loading time).')
     print(f'Total FPS (including model loading time): {num_frames / total_time:.2f}.')
 
+    # We still save the .pkl file, as it's useful for VIBE's
+    # rendering step and for debugging.
     print(f'Saving output results to \"{os.path.join(output_path, "vibe_output.pkl")}\".')
-
     joblib.dump(vibe_results, os.path.join(output_path, "vibe_output.pkl"))
 
     if not args.no_render:
@@ -339,6 +340,10 @@ def main(args):
     shutil.rmtree(image_folder)
     print('================= END =================')
 
+    # <-- *** MODIFICATION 1 *** -->
+    # Return the results dictionary for in-memory processing
+    return vibe_results
+
 def run_vibe(
     vid_file: str,
     output_folder: str,
@@ -390,17 +395,17 @@ def run_vibe(
     # 2. Call the original main function with the simulated args
     print(f"Starting VIBE processing for: {vid_file}")
     try:
-        # Call the main function from VIBE.py
-        main(args)
+        # <-- *** MODIFICATION 2 *** -->
+        # Call the main function from VIBE.py and get the results
+        results_data = main(args)
         print(f"Successfully processed video. Results are in: {output_folder}")
-        
-        # You could optionally return the path to the results here
-        # return os.path.join(output_folder, os.path.basename(vid_file).replace('.mp4', ''))
+        # Return the data dictionary
+        return results_data
         
     except Exception as e:
         print(f"An error occurred during VIBE processing: {e}")
-        # Optionally re-raise the exception if you want the caller to handle it
-        # raise e
+        # Return None to indicate failure
+        return None
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
@@ -408,7 +413,7 @@ if __name__ == '__main__':
     parser.add_argument('--vid_file', type=str,
                         help='input video path or youtube link')
 
-    parser.add_argument('--output_folder', type=str,
+    parser.add_GArgument('--output_folder', type=str,
                         help='output folder to write results')
 
     parser.add_argument('--tracking_method', type=str, default='bbox', choices=['bbox', 'pose'],
